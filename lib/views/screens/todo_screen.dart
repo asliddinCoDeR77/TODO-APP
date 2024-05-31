@@ -1,6 +1,11 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+const String apiUrl =
+    'https://dars3ux-default-rtdb.firebaseio.com/products.json';
 
 class TodoScreen extends StatefulWidget {
   const TodoScreen({super.key});
@@ -10,44 +15,88 @@ class TodoScreen extends StatefulWidget {
 }
 
 class _TodoScreenState extends State<TodoScreen> {
-  final List<Map<String, dynamic>> _tasks = List.generate(
-    0,
-    (index) => {'title': 'Task ${index + 1}', 'completed': false},
-  );
+  final List<Map<String, dynamic>> _tasks = [];
 
-  void _addTask() {
-    setState(() {
-      _tasks.add({'title': 'Task ${_tasks.length + 1}', 'completed': false});
-    });
+  Future<void> _fetchTasks() async {
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          _tasks.clear();
+          for (var item in data) {
+            _tasks.add({
+              'id': item['id'],
+              'title': item['title'],
+              'completed': item['completed'],
+            });
+          }
+        });
+      }
+    } catch (error) {}
   }
 
-  void _editTask(int index) {
+  Future<void> _addTask() async {
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json
+            .encode({'title': 'Task ${_tasks.length + 1}', 'completed': false}),
+      );
+      if (response.statusCode == 201) {
+        final Map<String, dynamic> newTask = json.decode(response.body);
+        setState(() {
+          _tasks.add({
+            'id': newTask['id'],
+            'title': newTask['title'],
+            'completed': newTask['completed'],
+          });
+        });
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+
+  Future<void> _editTask(int index) async {
     TextEditingController controller =
         TextEditingController(text: _tasks[index]['title']);
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Edit Task'),
+          title: const Text('Edit Task'),
           content: TextField(
             controller: controller,
-            decoration: InputDecoration(labelText: 'Task Name'),
+            decoration: const InputDecoration(labelText: 'Task Name'),
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                setState(() {
-                  _tasks[index]['title'] = controller.text;
-                });
+              onPressed: () async {
+                try {
+                  final response = await http.patch(
+                    Uri.parse('$apiUrl/${_tasks[index]['id']}'),
+                    headers: {'Content-Type': 'application/json'},
+                    body: json.encode({'title': controller.text}),
+                  );
+                  if (response.statusCode == 200) {
+                    setState(() {
+                      _tasks[index]['title'] = controller.text;
+                    });
+                  }
+                } catch (error) {
+                  return null;
+                }
                 Navigator.of(context).pop();
               },
-              child: Text('Save'),
+              child: const Text('Save'),
             ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: Text('Cancel'),
+              child: const Text('Cancel'),
             ),
           ],
         );
@@ -55,10 +104,25 @@ class _TodoScreenState extends State<TodoScreen> {
     );
   }
 
-  void _deleteTask(int index) {
-    setState(() {
-      _tasks.removeAt(index);
-    });
+  Future<void> _deleteTask(int index) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$apiUrl/${_tasks[index]['id']}'),
+      );
+      if (response.statusCode == 200) {
+        setState(() {
+          _tasks.removeAt(index);
+        });
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTasks();
   }
 
   @override
@@ -79,7 +143,7 @@ class _TodoScreenState extends State<TodoScreen> {
         itemCount: _tasks.length,
         itemBuilder: (context, index) {
           return Slidable(
-            key: ValueKey(_tasks[index]['title']),
+            key: ValueKey(_tasks[index]['id']),
             startActionPane: ActionPane(
               motion: const ScrollMotion(),
               children: [
@@ -105,6 +169,7 @@ class _TodoScreenState extends State<TodoScreen> {
               ],
             ),
             child: CheckboxListTile(
+              selectedTileColor: Colors.green,
               title: Text(_tasks[index]['title']),
               value: _tasks[index]['completed'],
               onChanged: (value) {
@@ -119,7 +184,7 @@ class _TodoScreenState extends State<TodoScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.black,
         onPressed: _addTask,
-        child: Icon(
+        child: const Icon(
           Icons.add,
           color: Colors.white,
         ),
